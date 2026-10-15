@@ -1,0 +1,29 @@
+{
+  "name": "crayon-boil",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "蜡笔抖抖 —— WebGPU 手绘蜡笔风格重绘，导出 3 秒 GIF 与贴纸",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "serve": "vite build && vite preview --host 0.0.0.0",
+    "qa": "node scripts/qa.mjs"
+  },
+  "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@mediapipe/tasks-vision": "^1.1.0",
+    "compression": "^1.8.2",
+    "fflate": "^0.8.3",
+    "gifenc": "^1.0.3",
+    "mediabunny": "^1.61.4"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.60",
+    "puppeteer-core": "^24.10.0",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.4"
+  }
+}

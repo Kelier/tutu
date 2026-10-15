@@ -1,0 +1,7 @@
+@ffmpeg/core 0.12.10, single-thread WebAssembly FFmpeg core.
+License: GPL-2.0-or-later (contains GPL codecs including libx264).
+Distributed build and source / build configuration: https://github.com/ffmpegwasm/ffmpeg.wasm
+Package source: https://www.npmjs.com/package/@ffmpeg/core/v/0.12.10
+Copyright FFmpeg contributors, ffmpeg.wasm contributors and included codec authors.
+The browser wrapper @ffmpeg/ffmpeg uses MIT; see upstream repository.
+The core is dynamically loaded as a separate optional runtime.

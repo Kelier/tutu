@@ -1,0 +1,17 @@
+内置艺术字体 / Bundled art fonts
+
+Shippori Mincho Regular — The Shippori Mincho Project Authors (FONTDASU)
+Source: https://github.com/google/fonts/tree/main/ofl/shipporimincho
+License: SIL Open Font License 1.1 (see shipporimincho-OFL.txt)
+
+Noto Serif SC — The Noto Project Authors / Adobe
+Source: https://github.com/google/fonts/tree/main/ofl/notoserifsc
+License: SIL Open Font License 1.1 (see notoserifsc-OFL.txt)
+
+Ma Shan Zheng — The Ma Shan Zheng Project Authors
+Source: https://github.com/google/fonts/tree/main/ofl/mashanzheng
+License: SIL Open Font License 1.1 (see mashanzheng-OFL.txt)
+
+These fonts are free to use in personal and commercial artwork under their respective OFL terms.
+Original full license texts are bundled alongside the font files.
+System handwriting / sans fonts are provided by your device and are not redistributed.

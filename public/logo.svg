@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <clipPath id="b"><path d="M24 8.6c8.7 0 15.5 6.3 15.6 14.8.1 9.2-7 16.3-15.9 16.3-9 0-15.6-6.8-15.4-15.8C8.5 15 15.3 8.6 24 8.6z"/></clipPath>
+  </defs>
+  <!-- 贴纸白边 + 投影 -->
+  <path d="M24 5.6c11 0 19.6 7.8 19.6 18.4 0 11.2-8.8 20-19.9 20-11.2 0-19.4-8.4-19.3-19.7C4.5 13.4 13.2 5.6 24 5.6z" fill="#241d17" opacity=".16" transform="translate(1.2 1.6)"/>
+  <path d="M24 5.6c11 0 19.6 7.8 19.6 18.4 0 11.2-8.8 20-19.9 20-11.2 0-19.4-8.4-19.3-19.7C4.5 13.4 13.2 5.6 24 5.6z" fill="#fffdf8"/>
+  <!-- 蜡笔填色 + 排线 -->
+  <path d="M24 8.6c8.7 0 15.5 6.3 15.6 14.8.1 9.2-7 16.3-15.9 16.3-9 0-15.6-6.8-15.4-15.8C8.5 15 15.3 8.6 24 8.6z" fill="#e8962a"/>
+  <g clip-path="url(#b)" fill="none" stroke-linecap="round">
+    <g stroke="#f7bd57" stroke-width="1.7" opacity=".95">
+      <path d="M6 24 22 8M8 30 28 10M11 35 33 13M15 39 37 17M20 42 41 21M26 44 43 27"/>
+    </g>
+    <g stroke="#cf6f17" stroke-width="1.1" opacity=".55">
+      <path d="M17 41 41 17M23 43 42 24M12 37 22 27"/>
+    </g>
+  </g>
+  <!-- 抖动的双重描边 -->
+  <path d="M24 8.6c8.7 0 15.5 6.3 15.6 14.8.1 9.2-7 16.3-15.9 16.3-9 0-15.6-6.8-15.4-15.8C8.5 15 15.3 8.6 24 8.6z" fill="none" stroke="#241d17" stroke-width="2.3" stroke-linejoin="round"/>
+  <path d="M24.6 9.4c8.3.3 14.6 6.4 14.4 14.4-.2 8.9-7.1 15.2-15.6 15-8.5-.2-14.3-6.6-14-15.3.3-8 6.8-14.4 15.2-14.1z" fill="none" stroke="#241d17" stroke-width=".9" opacity=".45" transform="rotate(-5 24 24)"/>
+  <!-- 表情 -->
+  <ellipse cx="19.4" cy="22.2" rx="1.55" ry="1.9" fill="#241d17"/>
+  <ellipse cx="28.6" cy="21.8" rx="1.55" ry="1.9" fill="#241d17"/>
+  <circle cx="16.2" cy="26.6" r="1.9" fill="#ef6f7c" opacity=".7"/>
+  <circle cx="31.9" cy="26.2" r="1.9" fill="#ef6f7c" opacity=".7"/>
+  <path d="M20.2 27.6c2.2 2.3 5.5 2.3 7.6-.1" fill="none" stroke="#241d17" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- 抖动符号 -->
+  <path d="M39.6 6.2l1.7-2.6M42.6 9.6l2.9-1.1M43.4 13.6l2.6.2" fill="none" stroke="#241d17" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

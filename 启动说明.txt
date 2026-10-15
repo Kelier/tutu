@@ -1,0 +1,17 @@
+蜡笔抖抖 · 当前完整项目
+
+包含：源码、本地字体及授权、模型资源、示例素材、构建产物、依赖锁文件、运行与验证脚本。
+当前功能：30 种字体排版模板、15 种 GPU 后期处理；AI 重绘已移除。
+
+启动：
+1. 安装 Node.js 和 npm。
+2. 进入 crayon-boil 目录。
+3. 运行 npm ci。
+4. 运行 npm run dev，打开命令输出的网址。
+
+生产构建：npm run build
+预览构建：npm run preview
+需通过 HTTP 服务打开，不要直接双击 index.html。浏览器须支持 WebGPU。
+Live 图的移动端导入说明见 README.md。
+
+未打包 node_modules 和测试截图，依赖可通过 npm ci 安装。

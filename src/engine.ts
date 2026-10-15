@@ -11,6 +11,7 @@ export interface StyleParams {
   shadowOn: boolean; shadowAng: number; shadowDist: number;
   motion: number; motionAmt: number;
   style: number; tone: number; focusStr: number; bgSimp: number;
+  subjDetail: number; detailSens: number;   // 主体细节保留（0 = 关）/ 复杂度阈值的灵敏度
   post: number; postAmt: number;   // 画面后期：0 = 无，1–15 见 POSTS
   paper: [number, number, number]; ink: [number, number, number]; shadowCol: [number, number, number];
 }
@@ -192,6 +193,8 @@ export class Engine {
       set(37 + i * 2, ...(k?.eyeR ?? [0, 0]), ...(k?.eyeL ?? [0, 0]));
       set(38 + i * 2, ...(k?.mouth ?? [0, 0]), k?.size ?? 0, 0);
     }
+    // 灵敏度越高，阈值越低，越多区域被判为“有细节”
+    set(41, p.subjDetail, 0.12 - 0.11 * p.detailSens, 0, 0);
     this.device.queue.writeBuffer(this.ubuf, 0, u);
   }
 
@@ -240,7 +243,7 @@ export class Engine {
     this.writeUniforms(p, { first });
     const enc = device.createCommandEncoder();
     this.pass(enc, this.pipes.kuwahara, tex.tmp.createView(), this.bind(tex.src, tex.src, M));
-    this.pass(enc, this.pipes.kuwahara, tex.simp.createView(), this.bind(tex.tmp, tex.tmp, M));
+    this.pass(enc, this.pipes.kuwahara, tex.simp.createView(), this.bind(tex.tmp, tex.src, M));
     this.pass(enc, this.pipes.edge, tex.edge.createView(), this.bind(tex.simp, tex.simp, M));
     this.quantPasses(enc);
     this.flowReady = false;

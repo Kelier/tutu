@@ -8,7 +8,7 @@
 //   fs_final     按模板合成 → 五官重绘 → 画面后期（15 种，uniform 切换不重编译）→ 集中线 / 速度线 → 叠加层 → 贴纸白边
 // 所有“手绘感”尺寸都在 720 基准的内容像素空间里计算，导出尺寸变化时观感一致。
 
-export const UNIFORM_ROWS = 41; // vec4 行数，与 struct U 一致
+export const UNIFORM_ROWS = 42; // vec4 行数，与 struct U 一致
 
 /** 模板编号 → 需要方向场的模板 */
 export const FLOW_STYLES = new Set([11, 12]);
@@ -34,6 +34,7 @@ struct U {
   fxRadial: f32, fxSpeed: f32, fxAmt: f32, ovOn: f32,
   fxC: vec2f, post: f32, postAmt: f32,   // 集中线中心（输出 uv）、画面后期编号与强度
   feat: array<vec4f, 4>,    // 每张脸两行：(右眼 xy, 左眼 xy), (嘴 xy, 脸宽, 0)，源图 uv
+  subj: vec4f,              // x = 主体细节保留（0 = 关，行为与旧版完全一致），y = 复杂度阈值（亮度标准差）
 }
 
 @group(0) @binding(0) var<uniform> u: U;
@@ -139,8 +140,27 @@ fn faceAt(uv: vec2f) -> f32 {
 // ---------- Pass 1: Kuwahara ----------
 @fragment fn fs_kuwahara(v: VO) -> @location(0) vec4f {
   let c = vec2i(v.pos.xy);
-  let fw = focusAt(v.pos.xy / u.work);
-  let r = i32(round(mix(u.kuwR + u.bgSimp * 3.0, max(1.0, u.kuwR * 0.35), fw)));
+  let uvp = v.pos.xy / u.work;
+  let fw = focusAt(uvp);
+  var rf = mix(u.kuwR + u.bgSimp * 3.0, max(1.0, u.kuwR * 0.35), fw);
+  if (u.subj.x > 0.0) {
+    // 主体细节保留：局部复杂度（取自原图 tB）超过阈值的地方，半径向 1 收缩；平坦处照常抽象
+    var s1 = 0.; var s2 = 0.;
+    for (var y = -2; y <= 2; y++) {
+      for (var x = -2; x <= 2; x++) {
+        let l = lum(ld(tB, c + vec2i(x, y)));
+        s1 += l; s2 += l * l;
+      }
+    }
+    let mean = s1 / 25.;
+    let sd = sqrt(max(s2 / 25. - mean * mean, 0.));
+    let gate = smoothstep(u.subj.y * 0.6, u.subj.y * 1.4, sd);
+    // 有焦点 / 抠图时只作用于主体；都没有时作用于全图，由阈值决定保留哪里
+    let hasSubj = u.focusN > 0.5 || u.maskOn > 0.5;
+    let reg = select(1.0, max(fw, select(0.0, maskAt(uvp), u.maskOn > 0.5)), hasSubj);
+    rf = mix(rf, 1.0, clamp(u.subj.x * gate * reg, 0.0, 1.0));
+  }
+  let r = i32(round(rf));
   var m0 = vec3f(0.); var m1 = vec3f(0.); var m2 = vec3f(0.); var m3 = vec3f(0.);
   var s0 = vec3f(0.); var s1 = vec3f(0.); var s2 = vec3f(0.); var s3 = vec3f(0.);
   for (var y = 0; y <= r; y++) {

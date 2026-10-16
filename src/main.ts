@@ -14,7 +14,8 @@ interface UiState {
   paperHex: string; inkHex: string; shadowHex: string; autoFocus: boolean;
   featOn: boolean; fxRadial: boolean; fxSpeed: boolean; fxAmt: number; sfx: string; bubble: string;
   journal: boolean; title: string; caption: string; sparkles: boolean;
-  format: 'gif' | 'motion' | 'live' | 'mp4';
+  format: 'gif' | 'motion' | 'live' | 'mp4' | 'webm';
+  videoBg: 'white' | 'black' | 'custom'; videoBgHex: string;
 }
 
 const params: StyleParams = {
@@ -32,9 +33,11 @@ const ui: UiState = {
   boilEvery: 2, fps: 12.5, sceneSize: 480, stickerSize: 320,
   paperHex: '#ebe3d7', inkHex: '#2a2018', shadowHex: '#2f6f78', autoFocus: true,
   featOn: false, fxRadial: false, fxSpeed: false, fxAmt: 1, sfx: '', bubble: '',
-  journal: false, title: '今天的小回忆', caption: 'a small memory', sparkles: false,
-  format: 'gif',
+  journal: false, title: '', caption: '', sparkles: false,
+  format: 'gif', videoBg: 'white', videoBgHex: '#f4ead6',
 };
+const videoBgColor = () => (ui.videoBg === 'white' ? '#ffffff' : ui.videoBg === 'black' ? '#000000' : ui.videoBgHex);
+let alphaVideoOk = false;
 let tpl: Template = TEMPLATES[0];
 
 type Source =
@@ -52,6 +55,7 @@ let busy = false, exporting = false, playing = true, thumbing = false;
 let dirty = true;
 let t0 = performance.now(), pausedAt = 0;
 let lastVideoStep = -1, processing = false;
+let lastPlayTry = 0, tapHinted = false;
 let autoFoci: Focus[] = [];
 let faceKeys: FaceKeys[] = [];
 let manualFocus: Focus | null = null;
@@ -94,14 +98,36 @@ function fitLong(w: number, h: number, long: number) {
   return [Math.max(2, Math.round(w * s)), Math.max(2, Math.round(h * s))];
 }
 
+const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|3gp|avi)$/i;
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif)$/i;
+
+/** 素材加载状态：移动端读大视频要几秒，没有提示会像“卡住” */
+let loadToken = 0;
+function setLoading(text: string | null) {
+  stage.classList.toggle('loading', !!text);
+  if (text) $('#loadingText').textContent = text;
+}
+
 async function loadFile(file: File) {
-  if (file.type.startsWith('video/')) return loadVideo(URL.createObjectURL(file), file.name);
-  if (file.type.startsWith('image/')) return loadImage(await createImageBitmap(file, { imageOrientation: 'from-image' }), file.name);
-  toast('只支持图片或视频文件');
+  // 部分安卓浏览器 / 微信内置浏览器给的 file.type 是空串，退回看扩展名
+  const isVideo = file.type.startsWith('video/') || (!file.type && VIDEO_EXT.test(file.name));
+  const isImage = file.type.startsWith('image/') || (!file.type && IMAGE_EXT.test(file.name));
+  if (!isVideo && !isImage) { toast('只支持图片或视频文件'); return; }
+  const token = ++loadToken;
+  setLoading(isVideo ? '正在读取视频…' : '正在读取图片…');
+  try {
+    if (isVideo) await loadVideo(URL.createObjectURL(file), file.name, token);
+    else await loadImage(await createImageBitmap(file, { imageOrientation: 'from-image' }), file.name);
+  } catch (e) {
+    if (token === loadToken) toast((e as Error).message || '素材加载失败');
+  } finally {
+    if (token === loadToken) setLoading(null);
+  }
 }
 
 async function loadImageUrl(url: string, name: string) {
   const blob = await (await fetch(url)).blob();
+  loadToken++;
   return loadImage(await createImageBitmap(blob), name);
 }
 
@@ -111,14 +137,49 @@ async function loadImage(bmp: ImageBitmap, name: string) {
   await prepareSource();
 }
 
-async function loadVideo(url: string, name: string) {
-  stopVideo();
+/**
+ * 等视频可以取帧。iOS Safari 对 blob 视频不会预加载（preload 被忽略），`loadeddata` 在 play() 之前可能永远不触发，
+ * 所以只等 `loadedmetadata`，再用一次静音 play/pause 把首帧解出来。每一步都有超时，避免无反应。
+ */
+function waitVideoReady(v: HTMLVideoElement, token: number) {
+  const once = (ev: string, ms: number, msg: string) => new Promise<void>((res, rej) => {
+    const timer = setTimeout(() => { cleanup(); rej(new Error(msg)); }, ms);
+    const ok = () => { cleanup(); res(); };
+    const bad = () => { cleanup(); rej(new Error('视频无法解码，可能是手机拍的 HEVC 格式；请换 H.264 的 MP4，或在相册里导出为兼容格式')); };
+    const cleanup = () => { clearTimeout(timer); v.removeEventListener(ev, ok); v.removeEventListener('error', bad); };
+    v.addEventListener(ev, ok); v.addEventListener('error', bad);
+  });
+  return (async () => {
+    if (v.readyState < 1) await once('loadedmetadata', 15000, '读取视频超时，文件可能太大或格式不支持');
+    if (token !== loadToken) throw new Error('已取消');
+    if (!v.videoWidth) throw new Error('视频无法解码，可能是 HEVC 或音频轨损坏；请换 H.264 的 MP4');
+    if (v.readyState < 2) {
+      // 触发解码首帧：play 成功后立即暂停
+      const loaded = once('loadeddata', 8000, '视频首帧解码超时，请换一个较短或较小的视频');
+      try { await v.play(); v.pause(); } catch { /* 自动播放被拒也没关系，seek 同样会解出一帧 */ }
+      v.currentTime = Math.min(0.01, (v.duration || 1) / 2);
+      await loaded;
+    }
+  })();
+}
+
+async function loadVideo(url: string, name: string, token = ++loadToken) {
   const v = document.createElement('video');
-  v.src = url; v.muted = true; v.playsInline = true; v.crossOrigin = 'anonymous'; v.preload = 'auto';
-  await new Promise<void>((res, rej) => { v.onloadeddata = () => res(); v.onerror = () => rej(new Error('视频无法解码')); });
+  v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+  v.src = url;
+  v.load();
+  try {
+    await waitVideoReady(v, token);
+  } catch (e) {
+    URL.revokeObjectURL(url);
+    throw e;
+  }
+  if (token !== loadToken) { URL.revokeObjectURL(url); return; }
+  setLoading('正在准备画面…');
+  stopVideo();                       // 新视频确认可用后才替换旧素材
   source = { kind: 'video', el: v, w: v.videoWidth, h: v.videoHeight, name, start: 0 };
   const trim = $<HTMLInputElement>('#trim');
-  trim.max = String(Math.max(0, v.duration - 3));
+  trim.max = String(Math.max(0, (v.duration || 3) - 3));
   trim.value = '0';
   $('#trimRow').hidden = false;
   updateTrimLabel();
@@ -132,11 +193,14 @@ function stopVideo() {
   $('#trimRow').hidden = true;
 }
 
-function seek(v: HTMLVideoElement, t: number) {
+/** seek 到 t；`seeked` 没触发（同一时间点 / 部分移动端）时靠超时放行，避免整个流程挂死 */
+function seek(v: HTMLVideoElement, t: number, timeout = 2500) {
   return new Promise<void>((res) => {
     if (Math.abs(v.currentTime - t) < 1e-3 && v.readyState >= 2) return res();
-    const done = () => { v.removeEventListener('seeked', done); res(); };
+    let timer = 0;
+    const done = () => { clearTimeout(timer); v.removeEventListener('seeked', done); res(); };
     v.addEventListener('seeked', done);
+    timer = window.setTimeout(done, timeout);
     v.currentTime = t;
   });
 }
@@ -218,10 +282,22 @@ function uploadPalette() {
   if (sw) sw.innerHTML = labs.map((l) => `<i style="background:${labToHex(l)}"></i>`).join('');
 }
 
+/** 取一帧缩放到工作尺寸。iOS Safari 对 video 元素 + resize 选项的 createImageBitmap 不稳，失败时走 2D canvas */
+const frameCanvas = new OffscreenCanvas(1, 1);
+async function frameBitmap(el: ImageBitmap | HTMLVideoElement): Promise<ImageBitmap> {
+  if (el instanceof HTMLVideoElement) {
+    try { return await createImageBitmap(el, { resizeWidth: W, resizeHeight: H, resizeQuality: 'high' }); } catch { /* 退回 canvas */ }
+    if (frameCanvas.width !== W || frameCanvas.height !== H) { frameCanvas.width = W; frameCanvas.height = H; }
+    frameCanvas.getContext('2d')!.drawImage(el, 0, 0, W, H);
+    return createImageBitmap(frameCanvas);
+  }
+  return createImageBitmap(el, { resizeWidth: W, resizeHeight: H, resizeQuality: 'high' });
+}
+
 /** 把当前源帧送进 GPU：缩放 → (视频)更新遮罩 → 去细节/量化 */
 async function processFrame(first: boolean) {
   if (!source) return;
-  const bmp = await createImageBitmap(source.el, { resizeWidth: W, resizeHeight: H, resizeQuality: 'high' });
+  const bmp = await frameBitmap(source.el);
   if (source.kind === 'video') {
     maskImage = grabMaskImage(source.el);
     if (params.maskOn || ui.mode === 'sticker') runMask(false, first ? null : maskRes?.mask);
@@ -252,7 +328,8 @@ function anchorUv(view = lastView): [number, number] | null {
   return [(f.cx - view.off[0]) / view.scale[0], (f.cy - view.off[1]) / view.scale[1]];
 }
 
-async function runDetection(announce: boolean) {
+/** held：调用方已经持有 GPU 锁（导出过程中）。此时再 withGpu 会等自己，导致永久卡死 */
+async function runDetection(announce: boolean, held = false) {
   if (!source || !ui.autoFocus || detecting) return;
   detecting = true;
   lastDetect = performance.now();
@@ -264,7 +341,7 @@ async function runDetection(announce: boolean) {
     if (status && announce) status.textContent = '识别中…';
     // 识别（WebGL）与 WebGPU 任务串行，避免部分驱动下两者同时提交时卡住
     const src = source;
-    const res = await withGpu(() => detectSubjects(src.el, src.w, src.h));
+    const res = held ? await detectSubjects(src.el, src.w, src.h) : await withGpu(() => detectSubjects(src.el, src.w, src.h));
     if (token !== sourceToken) return;
     autoFoci = res.foci; faceKeys = res.keys;
     const faces = autoFoci.filter((f) => f.kind === 'face').length;
@@ -380,6 +457,11 @@ function tick() {
   let t: number;
   if (source.kind === 'video') {
     const v = source.el;
+    // iOS / 省电模式下 play() 可能被拒：定时重试，仍被拒就提示点一下
+    if (playing && v.paused && performance.now() - lastPlayTry > 1000) {
+      lastPlayTry = performance.now();
+      v.play().catch(() => { if (!tapHinted) { tapHinted = true; toast('点一下画面开始播放'); } });
+    }
     if (v.currentTime >= source.start + 3 || v.currentTime < source.start - 0.05) v.currentTime = source.start;
     t = Math.max(0, v.currentTime - source.start);
     const step = Math.floor(v.currentTime * ui.fps);
@@ -515,7 +597,7 @@ async function exportGifLocked() {
     for (let i = 0; i < n; i++) {
       if (source.kind === 'video') {
         await seek(source.el, Math.min(source.el.duration - 0.01, source.start + i / ui.fps));
-        if (ui.autoFocus && i % 4 === 0) await runDetection(false);
+        if (ui.autoFocus && i % 4 === 0) await runDetection(false, true);
         await processFrame(i === 0);
       } else if (i === 0) await processFrame(true);
       const px = await renderExportFrame(w, h, i);
@@ -543,7 +625,7 @@ function exportMotion() { return withGpu(async () => {
   btns.forEach(b => b.disabled = true);
   const locked = $$('.panel-scroll, .source-actions, #modeSeg, .export-opts');
   locked.forEach(el => el.inert = true);
-  const format = ui.format as 'motion' | 'live' | 'mp4';
+  const format = ui.format as 'motion' | 'live' | 'mp4' | 'webm';
   const [w, h] = exportDims();
   const n = totalFrames();
   const started = performance.now();
@@ -551,16 +633,16 @@ function exportMotion() { return withGpu(async () => {
     await prepareTypography();
     if (source.kind === 'video') source.el.pause();
     const { makeMotion } = await import('./motion-export');
-    const result = await makeMotion({ w, h, fps: ui.fps, n, format, progress: setProgress, render: async (i) => {
+    const result = await makeMotion({ w, h, fps: ui.fps, n, format, bg: format === 'webm' ? null : videoBgColor(), progress: setProgress, render: async (i) => {
       if (source?.kind === 'video') {
         await seek(source.el, Math.min(source.el.duration - 0.01, source.start + i / ui.fps));
-        if (ui.autoFocus && i % 4 === 0) await runDetection(false);
+        if (ui.autoFocus && i % 4 === 0) await runDetection(false, true);
         await processFrame(i === 0);
       } else if (i === 0) await processFrame(true);
       return renderExportFrame(w, h, i);
     } });
     addResult(result.blob, `${tpl.name} · ${result.label}`, `${w}×${h} · ${(n / ui.fps).toFixed(2)}s`, result.ext, ((performance.now() - started) / 1000).toFixed(1), result.preview);
-    toast(format === 'live' ? 'Live Photo 配对包已生成，导入方式见下载包内说明' : '动态作品已生成，可下载或分享原文件');
+    toast(format === 'live' ? 'Live Photo 配对包已生成，导入方式见下载包内说明' : format === 'webm' ? '透明 WebM 已生成，请用 Chrome / Edge 或支持透明的剪辑软件使用' : '动态作品已生成，可下载或分享原文件');
   } catch (e) {
     toast('导出失败：' + (e as Error).message);
   } finally {
@@ -640,25 +722,19 @@ function toast(msg: string) {
 type SliderKey = keyof StyleParams | 'tol' | 'palCount' | 'fxAmt';
 type Slider = { key: SliderKey; ctl?: ControlKey; label: string; min: number; max: number; step: number; unit?: string; reprocess?: boolean };
 type Item = Slider | 'palette' | 'boil' | 'maskOn' | 'bgPaper' | 'shadowOn' | 'motion' | 'colors' | 'autoFocus' | 'featOn' | 'focusActions'
-  | 'fxLines' | 'sfx' | 'bubble' | 'journal' | 'title' | 'caption' | 'sparkles';
+  | 'fxLines' | 'sfx' | 'bubble' | 'journal' | 'title' | 'caption' | 'sparkles' | 'paperHint';
 
-const FOCUS_ITEMS: Item[] = [
-  'autoFocus',
-  { key: 'focusStr', label: '主体清晰度', min: 0, max: 1, step: 0.05, reprocess: true },
-  { key: 'bgSimp', label: '背景简化', min: 0, max: 1, step: 0.05, reprocess: true },
-  { key: 'subjDetail', label: '主体细节保留', min: 0, max: 1, step: 0.05, reprocess: true },
-  { key: 'detailSens', label: '细节解析灵敏度', min: 0, max: 1, step: 0.05, reprocess: true },
-  { key: 'tone', label: '明暗保留', min: 0, max: 1, step: 0.05 },
-  'featOn',
-  'focusActions',
-];
 const FX_ITEMS: Item[] = ['fxLines', { key: 'fxAmt', label: '线条强度', min: 0, max: 1, step: 0.05 }, 'sfx', 'bubble', 'journal', 'title', 'caption', 'sparkles'];
-const GROUPS: { title: string; open?: boolean; items: Item[] }[] = [
+/** 依赖「分离主体」的控件：没开分离主体时点了也不会有效果，直接隐藏 */
+const NEEDS_MASK: SliderKey[] = ['tol', 'shadowAng', 'shadowDist'];
+const SHADOW_KEYS: SliderKey[] = ['shadowAng', 'shadowDist'];
+const GROUPS: { id?: string; title: string; open?: boolean; items: Item[] }[] = [
   { title: '色块', open: true, items: [
     { key: 'kuwR', label: '简化程度', min: 1, max: 8, step: 1, reprocess: true },
     { key: 'chroma', ctl: 'chroma', label: '饱和度', min: 0.8, max: 1.8, step: 0.05, reprocess: true },
     'palette',
     { key: 'palCount', ctl: 'palCount', label: '颜色数', min: 4, max: 16, step: 1, reprocess: true },
+    { key: 'tone', label: '明暗保留', min: 0, max: 1, step: 0.05 },
   ] },
   { title: '笔触', items: [
     { key: 'spacing', ctl: 'spacing', label: '排线间距', min: 3, max: 12, step: 0.5 },
@@ -672,19 +748,28 @@ const GROUPS: { title: string; open?: boolean; items: Item[] }[] = [
     { key: 'detail', ctl: 'detail', label: '暗部细节线', min: 0, max: 1, step: 0.05 },
     { key: 'edgeTh', ctl: 'edgeTh', label: '分色阈值', min: 0, max: 0.3, step: 0.01 },
   ] },
-  { title: '抖动', items: [
+  { title: '抖动与动作', items: [
     { key: 'wobble', ctl: 'wobble', label: '抖动幅度', min: 0, max: 5, step: 0.1 },
     'boil',
+    'motion',
+    { key: 'motionAmt', label: '动作幅度', min: 0, max: 2, step: 0.05 },
   ] },
-  { title: '抠图与投影', items: [
+  // 复杂照片看不清、要抠主体、换背景，都在这一组
+  { id: 'focusBlock', title: '主体与背景', items: [
+    'autoFocus',
+    { key: 'focusStr', label: '主体清晰度', min: 0, max: 1, step: 0.05, reprocess: true },
+    { key: 'bgSimp', label: '背景简化', min: 0, max: 1, step: 0.05, reprocess: true },
+    { key: 'subjDetail', label: '主体细节保留', min: 0, max: 1, step: 0.05, reprocess: true },
+    { key: 'detailSens', label: '细节解析灵敏度', min: 0, max: 1, step: 0.05, reprocess: true },
+    'featOn',
+    'focusActions',
     'maskOn',
     { key: 'tol', label: '背景容差', min: 0.03, max: 0.2, step: 0.005, reprocess: true },
     'bgPaper', 'shadowOn',
     { key: 'shadowAng', ctl: 'shadow', label: '投影方向', min: 0, max: 360, step: 5, unit: '°' },
     { key: 'shadowDist', ctl: 'shadow', label: '投影距离', min: 0, max: 40, step: 1 },
   ] },
-  { title: '动作', items: ['motion', { key: 'motionAmt', label: '动作幅度', min: 0, max: 2, step: 0.05 }] },
-  { title: '纸与墨', items: ['colors'] },
+  { title: '纸色与墨色', items: ['colors', 'paperHint'] },
 ];
 
 const syncers: (() => void)[] = [];
@@ -759,7 +844,8 @@ function buildItem(it: Item): HTMLElement {
     syncers.push(() => {
       const v = getVal(it.key); input.value = String(v); out.textContent = fmt(v);
       lab.textContent = (it.ctl && tpl.labels?.[it.ctl]) || it.label;
-      row.hidden = hidden(it.ctl) || (it.key === 'palCount' && ui.palMode !== 'auto') || (it.key === 'fxAmt' && !ui.fxRadial && !ui.fxSpeed);
+      row.hidden = hidden(it.ctl) || (it.key === 'palCount' && ui.palMode !== 'auto') || (it.key === 'fxAmt' && !ui.fxRadial && !ui.fxSpeed)
+        || (NEEDS_MASK.includes(it.key) && !params.maskOn) || (SHADOW_KEYS.includes(it.key) && ui.mode === 'sticker');
     });
     return row;
   }
@@ -780,10 +866,14 @@ function buildItem(it: Item): HTMLElement {
     }
     case 'maskOn':
       return toggle('分离主体', () => params.maskOn, (v) => { params.maskOn = v; if (v && source?.kind === 'video') runMask(false); }, '<em id="maskStatus"></em>');
-    case 'bgPaper': return toggle('背景换成白纸', () => params.bgPaper, (v) => (params.bgPaper = v));
+    case 'bgPaper': {
+      const r = toggle('背景换成纸色', () => params.bgPaper, (v) => (params.bgPaper = v), '<em>主体保留，背景换成「纸色与墨色」里的纸色</em>');
+      syncers.push(() => (r.hidden = !params.maskOn || ui.mode === 'sticker'));
+      return r;
+    }
     case 'shadowOn': {
       const r = toggle('投影', () => params.shadowOn, (v) => (params.shadowOn = v));
-      syncers.push(() => (r.hidden = hidden('shadow')));
+      syncers.push(() => (r.hidden = hidden('shadow') || !params.maskOn || ui.mode === 'sticker'));
       return r;
     }
     case 'motion':
@@ -837,6 +927,11 @@ function buildItem(it: Item): HTMLElement {
     }
     case 'sparkles':
       return toggle('小星星和表情线', () => ui.sparkles, (v) => (ui.sparkles = v));
+    case 'paperHint': {
+      const p = document.createElement('p'); p.className = 'hint';
+      p.textContent = '纸色出现在笔触露白处；分离主体后，也可作为换掉的背景色。导出视频的背景色在导出面板里选。';
+      return p;
+    }
     case 'colors': {
       const row = document.createElement('div'); row.className = 'colors';
       const defs: [keyof UiState, 'paper' | 'ink' | 'shadowCol', string, ControlKey?][] = [['paperHex', 'paper', '纸'], ['inkHex', 'ink', '墨线'], ['shadowHex', 'shadowCol', '投影', 'shadow']];
@@ -857,9 +952,8 @@ function applyTemplate(t: Template) {
   if (!engine) { toast('浏览器尚未就绪，请使用支持 WebGPU 的浏览器'); return; }
   tpl = t;
   Object.assign(params, t.params, { paper: hexToRgb(t.paper), ink: hexToRgb(t.ink), shadowCol: hexToRgb(t.shadow) });
-  Object.assign(ui, { paperHex: t.paper, inkHex: t.ink, shadowHex: t.shadow, boilEvery: t.boilEvery ?? 2, journal: !!t.journal, sparkles: !!t.journal });
+  Object.assign(ui, { paperHex: t.paper, inkHex: t.ink, shadowHex: t.shadow, boilEvery: t.boilEvery ?? 2, });
   if (t.hide?.includes('palette')) ui.palMode = 'template';
-  if (t.journal) void ensureArtFont().then(() => { overlayKey = ''; bump(); }).catch(() => toast('艺术字体暂未载入，使用系统字体'));
   engine.ensureFinal(t.params.style);
   uploadPalette();
   dirty = true;
@@ -868,12 +962,12 @@ function applyTemplate(t: Template) {
 
 function buildControls() {
   initTypography($('#typographyBlock'), () => { overlayKey = ''; bump(); }, toast);
-  FOCUS_ITEMS.forEach((it) => $('#focusControls').append(buildItem(it)));
   FX_ITEMS.forEach((it) => $('#fxControls').append(buildItem(it)));
   const panel = $('#controls');
   for (const g of GROUPS) {
     const d = document.createElement('details');
     d.className = 'block group';
+    if (g.id) d.id = g.id;
     d.open = !!g.open;
     d.innerHTML = `<summary><h3>${g.title}</h3><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></summary>`;
     const body = document.createElement('div'); body.className = 'group-body';
@@ -922,14 +1016,25 @@ function buildControls() {
       }));
     }
     const mark = (root: string, v: string) => $$<HTMLButtonElement>(`${root} button`).forEach((b) => { const on = b.dataset.v === v; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+    // 透明 WebM 只在贴纸模式 + 浏览器能编码 alpha 时可选；其余情况回退到 MP4
+    const webmOk = alphaVideoOk && ui.mode === 'sticker';
+    $<HTMLButtonElement>('#formatSeg [data-v="webm"]').hidden = !webmOk;
+    if (ui.format === 'webm' && !webmOk) ui.format = 'mp4';
+    const solidVideo = ui.format === 'mp4' || ui.format === 'live' || ui.format === 'motion';
+    $('#bgRow').hidden = !solidVideo;
+    $<HTMLInputElement>('#videoBgHex').hidden = ui.videoBg !== 'custom';
+    $<HTMLInputElement>('#videoBgHex').value = ui.videoBgHex;
+    mark('#videoBgSeg', ui.videoBg);
     mark('#sizeSeg', String(cur)); mark('#fpsSeg', String(ui.fps)); mark('#formatSeg', ui.format);
     $('#exportSummary').textContent = `${cur}${ui.mode === 'sticker' ? ' 方' : ' 长边'} · ${ui.fps} fps · ${totalFrames()} 帧`;
     const format = ui.format;
-    $('#exportGif').textContent = format === 'gif' ? (ui.mode === 'sticker' ? '导出 3 秒贴纸 GIF' : '导出 3 秒 GIF') : format === 'mp4' ? '导出 3 秒 MP4' : format === 'live' ? '导出 Live Photo' : '导出动态照片';
-    $('#motionHint').textContent = (format !== 'gif' && ui.mode === 'sticker' ? '贴纸会合成纸色背景。' : '') + (format === 'gif' ? 'GIF 支持透明贴纸，聊天软件都能直接发。' : format === 'motion' ? '单文件动态照片。保存原始 JPG 至兼容安卓相册，勿经聊天工具压缩；相册和发布平台的识别可能不同。' : format === 'live' ? '含配对 JPG + MOV 的 ZIP。需用支持 Live Photo 配对导入的工具保存到 iPhone 相册，浏览器不能直接写入为实况。' : 'H.264 短视频，适合移动端分享。');
+    $('#exportGif').textContent = format === 'gif' ? (ui.mode === 'sticker' ? '导出 3 秒贴纸 GIF' : '导出 3 秒 GIF') : format === 'mp4' ? '导出 3 秒 MP4' : format === 'webm' ? '导出透明 WebM' : format === 'live' ? '导出 Live Photo' : '导出动态照片';
+    $('#motionHint').textContent = (solidVideo && ui.mode === 'sticker' ? '视频不支持透明，贴纸会垫上所选背景色；要透明请用 GIF' + (alphaVideoOk ? ' 或透明 WebM。' : '。') : '') + (format === 'gif' ? 'GIF 支持透明贴纸，聊天软件都能直接发。' : format === 'motion' ? '单文件动态照片。保存原始 JPG 至兼容安卓相册，勿经聊天工具压缩；相册和发布平台的识别可能不同。' : format === 'live' ? '含配对 JPG + MOV 的 ZIP。需用支持 Live Photo 配对导入的工具保存到 iPhone 相册，浏览器不能直接写入为实况。' : format === 'webm' ? '带透明通道的 VP9 视频，可叠在网页 / 剪辑软件上。Chrome、Edge、Firefox 能直接播放；Safari 与多数聊天软件不支持透明，发给别人请用 GIF。' : 'H.264 短视频，适合移动端分享。');
   });
   $$<HTMLButtonElement>('#fpsSeg button').forEach((b) => (b.onclick = () => { ui.fps = +b.dataset.v!; syncControls(); }));
   $$<HTMLButtonElement>('#formatSeg button').forEach((b) => (b.onclick = () => { ui.format = b.dataset.v as UiState['format']; syncControls(); }));
+  $$<HTMLButtonElement>('#videoBgSeg button').forEach((b) => (b.onclick = () => { ui.videoBg = b.dataset.v as UiState['videoBg']; syncControls(); }));
+  $<HTMLInputElement>('#videoBgHex').oninput = (e) => { ui.videoBgHex = (e.target as HTMLInputElement).value; };
   $('#exportGif').onclick = () => ui.format === 'gif' ? exportGif() : exportMotion();
 
   // 画面后期：15 种 GPU 处理，uniform 切换，不重编译
@@ -1014,6 +1119,7 @@ function buildControls() {
       if (b.dataset.mode) { ui.mode = b.dataset.mode as Mode; syncControls(); }
     });
   }));
+  window.addEventListener('pointerdown', () => { if (source?.kind === 'video' && playing && source.el.paused && !exporting) source.el.play().catch(() => {}); }, { passive: true });
   stage.ondragover = (e) => { e.preventDefault(); stage.classList.add('drag'); };
   stage.ondragleave = () => stage.classList.remove('drag');
   stage.ondrop = (e) => { e.preventDefault(); stage.classList.remove('drag'); const f = e.dataTransfer?.files[0]; if (f) loadFile(f).catch((er) => toast(er.message)); };
@@ -1069,6 +1175,7 @@ async function boot() {
     return;
   }
   $('#gpuStatus').dataset.state = 'ok';
+  import('./motion-export').then((m) => m.canEncodeAlpha(320, 320)).then((ok) => { alphaVideoOk = ok; syncControls(); });
   applyTemplate(TEMPLATES[0]);
   requestAnimationFrame(tick);
   bootStep('载入示例', 0.75);

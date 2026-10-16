@@ -17,7 +17,6 @@ export interface Template {
   params: Partial<StyleParams> & { style: number };
   paper: string; ink: string; shadow: string;
   boilEvery?: number;
-  journal?: boolean;          // 切到这个模板时默认打开手账装饰（边框 + 标题 + 星星）
   hide?: ControlKey[];
   labels?: Partial<Record<ControlKey, string>>;
 }
@@ -41,10 +40,10 @@ export const TEMPLATES: Template[] = [
     paper: '#ebe3d7', ink: '#2a2018', shadow: '#2f6f78',
   },
   {
-    id: 'island', name: '云岛蜡笔', en: 'Island Crayon', desc: '参考图画风 · 天蓝与珊瑚粉、粗蜡笔排线、奶油纸和金色星星',
+    id: 'island', name: '云岛蜡笔', en: 'Island Crayon', desc: '参考图画风 · 天蓝与珊瑚粉、粗蜡笔排线、奶油纸',
     palette: ['#292c30', '#f7efdc', '#78a7d8', '#b3cce7', '#ed9d9d', '#ce6e62', '#75804c', '#a2a16a', '#e4bd58', '#9b493c', '#d9b18c', '#e6cfb4'],
     params: { style: 14, kuwR: 7, chroma: 1.12, spacing: 4.2, pressure: 1.12, grain: 0.48, lineW: 0.65, wobble: 1.1, edgeTh: 0.2, hatchAng: 32, detail: 0.3, tone: 0.35, bgSimp: 0.65 },
-    paper: '#f4ead6', ink: '#35302b', shadow: '#78a7d8', journal: true, boilEvery: 3,
+    paper: '#f4ead6', ink: '#35302b', shadow: '#78a7d8', boilEvery: 3,
     hide: ['cross', 'shadow'],
     labels: { spacing: '蜡笔笔触', grain: '纸面露白', lineW: '色块间隙' },
   },
@@ -151,11 +150,10 @@ export const TEMPLATES: Template[] = [
     labels: { spacing: '刻线间距' },
   },
   {
-    id: 'pastel', name: '粉彩手账', en: 'Pastel Journal', desc: '油画棒来回涂、色块留白、细铅笔线、手账标题和星星',
+    id: 'pastel', name: '粉彩手账', en: 'Pastel Journal', desc: '油画棒来回涂、色块留白、细铅笔线',
     palette: PASTEL,
     params: { style: 13, kuwR: 8, chroma: 1.25, spacing: 5.5, pressure: 0.9, grain: 0.62, lineW: 1, wobble: 1.6, edgeTh: 0.22, hatchAng: 20, detail: 0.25, tone: 0.4, bgSimp: 0.8 },
     paper: '#f3ecdf', ink: '#2e2a28', shadow: '#8fb4ea',
-    journal: true,
     hide: ['cross', 'shadow'],
     labels: { spacing: '笔触间距', grain: '纸纹露白', lineW: '色块留白' },
   },

@@ -1,15 +1,40 @@
 import { appleMovie, appleStill, motionPhoto, concat } from './live-photo';
-export type MotionFormat = 'motion'|'live'|'mp4';
-type Opts = {w:number;h:number;fps:number;n:number;format:MotionFormat;render:(i:number)=>Promise<Uint8Array>;progress:(p:number,s:string)=>void};
-export async function makeMotion(o:Opts):Promise<{blob:Blob;cover:Blob;ext:string;label:string;preview:Blob}>{
+export type MotionFormat = 'motion'|'live'|'mp4'|'webm';
+/** bg：视频不支持透明，贴纸 / 透明区域垫这个颜色；WebM 透明导出时为 null */
+type Opts = {w:number;h:number;fps:number;n:number;format:MotionFormat;bg:string|null;render:(i:number)=>Promise<Uint8Array>;progress:(p:number,s:string)=>void};
+/** 浏览器能否编码带 alpha 的 VP9（Chrome / Edge 桌面与安卓支持，Safari 不支持） */
+export async function canEncodeAlpha(w:number,h:number){
+ try{const b=await import('mediabunny');return await b.canEncodeVideo('vp9',{width:w,height:h,alpha:'keep'});}catch{return false;}
+}
+async function makeWebm(o:Opts):Promise<{blob:Blob;cover:Blob;ext:string;label:string;preview:Blob}>{
  const {w,h,fps,n}=o;
+ if(!await canEncodeAlpha(w,h))throw Error('当前浏览器不支持透明视频编码，请用桌面版 Chrome / Edge 导出');
+ const canvas=new OffscreenCanvas(w,h),ctx=canvas.getContext('2d',{alpha:true})!;
+ const bunny=await import('mediabunny');
+ const output=new bunny.Output({format:new bunny.WebMOutputFormat(),target:new bunny.BufferTarget()});
+ const source=new bunny.CanvasSource(canvas,{codec:'vp9',bitrate:2_500_000,keyFrameInterval:1,alpha:'keep'});
+ output.addVideoTrack(source,{frameRate:fps});
+ let cover:Blob|null=null;
+ try{await output.start();
+  for(let i=0;i<n;i++){const px=await o.render(i);ctx.clearRect(0,0,w,h);ctx.putImageData(new ImageData(new Uint8ClampedArray(px.buffer as ArrayBuffer,px.byteOffset,px.byteLength),w,h),0,0);
+   if(i===Math.floor(n/2))cover=await canvas.convertToBlob({type:'image/png'});
+   await source.add(i/fps,1/fps);o.progress((i+1)/n,`渲染与编码 ${i+1}/${n} 帧`);}
+  source.close();await output.finalize();}
+ catch(e){await output.cancel().catch(()=>{});throw e;}
+ const blob=new Blob([output.target.buffer!],{type:'video/webm'});
+ return {blob,preview:blob,cover:cover!,ext:'webm',label:'透明 WebM'};
+}
+export async function makeMotion(o:Opts):Promise<{blob:Blob;cover:Blob;ext:string;label:string;preview:Blob}>{
+ if(o.format==='webm')return makeWebm(o);
+ const {w,h,fps,n}=o;
+ const bg=o.bg??'#ffffff';
  const canvas=new OffscreenCanvas(w,h),ctx=canvas.getContext('2d')!;
  const mid=Math.floor(n/2);let cover:Blob|null=null,mp4:Uint8Array<ArrayBuffer>;
  const bunny=await import('mediabunny');
  const native=await bunny.canEncodeVideo('avc',{width:w,height:h});
  const put=(px:Uint8Array)=>{ctx.putImageData(new ImageData(new Uint8ClampedArray(px.buffer as ArrayBuffer,px.byteOffset,px.byteLength),w,h),0,0);
   // Video/live photos are opaque even when exporting a sticker.
-  ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#f4ead6';ctx.fillRect(0,0,w,h);ctx.globalCompositeOperation='source-over';};
+  ctx.globalCompositeOperation='destination-over';ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);ctx.globalCompositeOperation='source-over';};
  if(native){
   const output=new bunny.Output({format:new bunny.Mp4OutputFormat({fastStart:false}),target:new bunny.BufferTarget()});
   const source=new bunny.CanvasSource(canvas,{codec:'avc',bitrate:2_000_000,keyFrameInterval:1});

@@ -78,10 +78,10 @@ console.log('thumbs rendered:', await page.evaluate(() => window.__app.thumbsDon
 await page.evaluate(() => {
   const a = window.__app; a.applyTemplate('kid');
   a.ui.featOn = true; a.ui.fxRadial = true; a.ui.sfx = '哇哦'; a.ui.bubble = '今天也要开心'; a.syncControls();
-  document.querySelector('#focusControls input[type=checkbox]') && null;
+  document.querySelector('#focusBlock input[type=checkbox]') && null;
 });
 await page.evaluate(() => { const a = window.__app; a.ui.autoFocus = false; a.syncControls(); a.ui.autoFocus = true; a.syncControls(); });
-await page.evaluate(() => { const t = [...document.querySelectorAll('#focusControls .toggle')].find((el) => el.textContent.includes('五官')); t.querySelector('input').checked = true; t.querySelector('input').dispatchEvent(new Event('change')); });
+await page.evaluate(() => { const t = [...document.querySelectorAll('#focusBlock .toggle')].find((el) => el.textContent.includes('五官')); t.querySelector('input').checked = true; t.querySelector('input').dispatchEvent(new Event('change')); });
 await new Promise((r) => setTimeout(r, 1500));
 await save('fx-kid.png', 'exportPng');
 await mirrorCanvas();

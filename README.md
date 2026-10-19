@@ -113,3 +113,12 @@ npm run qa                     # 无头 Chromium：首屏/样式检查 + 14 个�
 视频优先使用 WebCodecs H.264；不支持时按需加载本地 FFmpeg WASM（首次约 32MB）。GIF 不依赖此下载。所有导出均在浏览器本地进行。WASM 可能受移动端内存限制，失败时可降低尺寸和帧率。
 
 验证脚本：`node scripts/workbench-qa.mjs`（30 种模板可达性 / 分类 Roll / 撤销 / 还原 / 合成触控拖字 / 15 种后期像素差异 / GIF 与 Live 导出 / 多尺寸无横向溢出）；`node scripts/features-qa.mjs`（GPU / 排版 / 三种动态格式）；`node scripts/software-video-qa.mjs`（关闭 VideoEncoder 验证 WASM 回退）。浏览器验证使用 Chromium 与合成触控；未代替 iPhone / Android 真机的相册导入验证。
+
+## 视频导入与导出
+
+- 导入视频：只等 `loadedmetadata`（iOS Safari 不会预加载 blob 视频，`loadeddata` 可能永远不来），再静音 play/pause 解出首帧；每一步有超时，失败会提示原因（多为手机拍的 HEVC）。加载中有遮罩，`file.type` 为空时按扩展名判断
+- 导出内部调用主体识别时不再重复拿 GPU 锁（此前视频导出可能永久卡在 0%）
+- MP4 / Live 图 / 安卓动态的背景色可选 白（默认）/ 黑 / 自选；GIF 仍支持透明
+- 贴纸模式 + 支持的浏览器可导出透明 WebM（VP9 alpha，mediabunny 把颜色与 alpha 拆成两路编码）。Safari 与多数聊天软件不支持透明视频，发给别人用 GIF
+- `node scripts/video-qa.mjs [url] [video]`：视频导入、坏文件提示、白/黑底、透明 WebM、模板默认不带手账装饰
+

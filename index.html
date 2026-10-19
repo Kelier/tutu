@@ -72,6 +72,7 @@
             <div class="boot-bar"><i id="bootBar"></i></div>
           </div>
           <div class="gpu-msg"><b>无法启动 WebGPU</b><span id="gpuMsg"></span></div>
+          <div class="loading-card" id="loading" role="status" aria-live="polite"><span></span><b id="loadingText"></b></div>
           <div class="busy" id="busy"><span></span>正在准备模板…</div>
         </div>
 
@@ -121,10 +122,6 @@
             <header class="block-head"><h3>风格模板</h3><span class="muted" id="tplHint">用当前素材实时预览</span></header>
             <div class="templates" id="templates"></div>
           </section>
-          <section class="block" id="focusBlock">
-            <header class="block-head"><h3>主体清晰</h3><span class="muted">复杂照片看不清时调这里</span></header>
-            <div id="focusControls"></div>
-          </section>
         </div>
         <div class="pane" data-pane="post" hidden>
           <section class="block" id="postBlock">
@@ -160,8 +157,9 @@
         </div>
         <div class="export-opts">
           <div class="opt-row"><span>格式</span><div class="seg wide" id="formatSeg" role="radiogroup" aria-label="动态格式">
-            <button role="radio" data-v="gif">GIF</button><button role="radio" data-v="mp4">MP4</button><button role="radio" data-v="live">Live 图</button><button role="radio" data-v="motion">安卓动态</button>
+            <button role="radio" data-v="gif">GIF</button><button role="radio" data-v="mp4">MP4</button><button role="radio" data-v="webm" hidden>透明 WebM</button><button role="radio" data-v="live">Live 图</button><button role="radio" data-v="motion">安卓动态</button>
           </div></div>
+          <div class="opt-row" id="bgRow"><span>背景</span><div class="bg-opts"><div class="seg" id="videoBgSeg" role="radiogroup" aria-label="视频背景色"><button role="radio" data-v="white">白</button><button role="radio" data-v="black">黑</button><button role="radio" data-v="custom">自选</button></div><input type="color" id="videoBgHex" aria-label="自选背景色" hidden /></div></div>
           <details class="export-more"><summary><span>尺寸与帧率</span><b id="exportSummary"></b><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></summary>
           <div class="opt-row"><span>尺寸</span><div class="seg wide sizes" id="sizeSeg" role="radiogroup" aria-label="尺寸"></div></div>
           <div class="opt-row"><span>帧率</span><div class="seg wide" id="fpsSeg" role="radiogroup" aria-label="帧率">
